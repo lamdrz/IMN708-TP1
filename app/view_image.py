@@ -6,7 +6,7 @@ from matplotlib.widgets import Slider
 class ImageViewer:
     def __init__(self, path: str):
         self.path = path
-        self.img  = nib.load(path)
+        self.img  = nib.as_closest_canonical(nib.load(path))
         self.data = self.img.get_fdata()
         self.nx, self.ny, self.nz = self.data.shape[:3]
         self.nt = self.data.shape[3] if self.data.ndim >= 4 else 1
@@ -42,26 +42,27 @@ class ImageViewer:
             ax.set_box_aspect(1)
 
         volume = self._current_volume()
-        self.img_x = self.axes[0].imshow(
-            volume[self.x, :, :].T, cmap="gray", origin="lower", aspect=self.aspect_x
-        )
-        self.axes[0].set_title(f"Axial (X = {self.x})")
-        for border in self.axes[0].spines:
-            self.axes[0].spines[border].set_edgecolor('red')
 
-        self.img_y = self.axes[1].imshow(
-            volume[:, self.y, :].T, cmap="gray", origin="lower", aspect=self.aspect_y
+        self.img_x = self.axes[1].imshow(
+            volume[self.x, ::-1, :].T, cmap="gray", origin="lower", aspect=self.aspect_x
         )
-        self.axes[1].set_title(f"Sagittal (Y = {self.y})")
+        self.axes[1].set_title(f"Sagittal (X = {self.x})")
         for border in self.axes[1].spines:
             self.axes[1].spines[border].set_edgecolor('green')
 
-        self.img_z = self.axes[2].imshow(
-            volume[:, :, self.z].T, cmap="gray", origin="lower", aspect=self.aspect_z
+        self.img_y = self.axes[2].imshow(
+            volume[:, self.y, :].T, cmap="gray", origin="lower", aspect=self.aspect_y
         )
-        self.axes[2].set_title(f"Coronal (Z = {self.z})")
+        self.axes[2].set_title(f"Coronal (Y = {self.y})")
         for border in self.axes[2].spines:
             self.axes[2].spines[border].set_edgecolor('blue')
+
+        self.img_z = self.axes[0].imshow(
+            volume[:, :, self.z].T, cmap="gray", origin="lower", aspect=self.aspect_z
+        )
+        self.axes[0].set_title(f"Axial (Z = {self.z})")
+        for border in self.axes[0].spines:
+            self.axes[0].spines[border].set_edgecolor('red')
 
     def _setup_sliders(self):
         self.fig.canvas.draw()
@@ -73,17 +74,17 @@ class ImageViewer:
                 plt.axes([pos.x0, pos.y0 - 0.12, pos.width, 0.03])
             )
 
-        ax_x, ax_y, ax_z = slider_axes
+        ax_z, ax_x, ax_y = slider_axes
         ax_t = plt.axes([0.15, 0.06, 0.7, 0.03])
 
         self.slider_x = Slider(
-            ax_x, "Axial (X)", 0, self.nx - 1, valinit=self.x, valstep=1
+            ax_x, "Sagittal (X)", 0, self.nx - 1, valinit=self.x, valstep=1
         )
         self.slider_y = Slider(
-            ax_y, "Sagittal (Y)", 0, self.ny - 1, valinit=self.y, valstep=1
+            ax_y, "Coronal (Y)", 0, self.ny - 1, valinit=self.y, valstep=1
         )
         self.slider_z = Slider(
-            ax_z, "Coronal (Z)", 0, self.nz - 1, valinit=self.z, valstep=1
+            ax_z, "Axial (Z)", 0, self.nz - 1, valinit=self.z, valstep=1
         )
         self.slider_t = Slider(
             ax_t, "Temps (T)", 0, self.nt - 1, valinit=self.t, valstep=1
@@ -101,26 +102,26 @@ class ImageViewer:
 
     def _on_x_change(self, val):
         self.x = int(val)
-        self.img_x.set_data(self._current_volume()[self.x, :, :].T)
-        self.axes[0].set_title(f"Axial (X = {self.x})")
+        self.img_x.set_data(self._current_volume()[self.x, ::-1, :].T)
+        self.axes[1].set_title(f"Sagittal (X = {self.x})")
         self.fig.canvas.draw_idle()
 
     def _on_y_change(self, val):
         self.y = int(val)
         self.img_y.set_data(self._current_volume()[:, self.y, :].T)
-        self.axes[1].set_title(f"Sagittal (Y = {self.y})")
+        self.axes[2].set_title(f"Coronal (Y = {self.y})")
         self.fig.canvas.draw_idle()
 
     def _on_z_change(self, val):
         self.z = int(val)
         self.img_z.set_data(self._current_volume()[:, :, self.z].T)
-        self.axes[2].set_title(f"Coronal (Z = {self.z})")
+        self.axes[0].set_title(f"Axial (Z = {self.z})")
         self.fig.canvas.draw_idle()
 
     def _on_t_change(self, val):
         self.t = int(val)
         volume = self._current_volume()
-        self.img_x.set_data(volume[self.x, :, :].T)
+        self.img_x.set_data(volume[self.x, ::-1, :].T)
         self.img_y.set_data(volume[:, self.y, :].T)
         self.img_z.set_data(volume[:, :, self.z].T)
         self.fig.canvas.draw_idle()
