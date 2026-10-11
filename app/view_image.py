@@ -1,6 +1,7 @@
 import nibabel as nib
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
+import argparse
 
 
 class ImageViewer:
@@ -51,7 +52,7 @@ class ImageViewer:
             self.axes[1].spines[border].set_edgecolor('green')
 
         self.img_y = self.axes[2].imshow(
-            volume[:, self.y, :].T, cmap="gray", origin="lower", aspect=self.aspect_y
+            volume[::-1, self.y, :].T, cmap="gray", origin="lower", aspect=self.aspect_y
         )
         self.axes[2].set_title(f"Coronal (Y = {self.y})")
         for border in self.axes[2].spines:
@@ -108,7 +109,7 @@ class ImageViewer:
 
     def _on_y_change(self, val):
         self.y = int(val)
-        self.img_y.set_data(self._current_volume()[:, self.y, :].T)
+        self.img_y.set_data(self._current_volume()[::-1, self.y, :].T)
         self.axes[2].set_title(f"Coronal (Y = {self.y})")
         self.fig.canvas.draw_idle()
 
@@ -122,9 +123,21 @@ class ImageViewer:
         self.t = int(val)
         volume = self._current_volume()
         self.img_x.set_data(volume[self.x, ::-1, :].T)
-        self.img_y.set_data(volume[:, self.y, :].T)
+        self.img_y.set_data(volume[::-1, self.y, :].T)
         self.img_z.set_data(volume[:, :, self.z].T)
         self.fig.canvas.draw_idle()
 
     def show(self):
         plt.show()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Visualisation d'une image NIfTI")
+    parser.add_argument("--image", type=str, help="Chemin vers l'image NIfTI")
+    args = parser.parse_args()
+    if args.image:
+        viewer = ImageViewer(args.image)
+    else:
+        image = input("NIfTI image path: ")
+        viewer = ImageViewer(image)
+
+    viewer.show()
