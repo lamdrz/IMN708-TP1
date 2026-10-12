@@ -15,12 +15,19 @@ def get_args():
 
 
 def compute_raw_stats(data):
+
+    mask_foreground = data > 0
+    
+    if np.any(mask_foreground):
+        data_fg = data[mask_foreground]
+    else:
+        data_fg = data
     stats = {
-        "min": np.min(data),
-        "max": np.max(data),
-        "mean": np.mean(data),
-        "std": np.std(data),
-        "median": np.median(data),
+        "min": np.min(data_fg),
+        "max": np.max(data_fg),
+        "mean": np.mean(data_fg),
+        "std": np.std(data_fg),
+        "median": np.median(data_fg),
         "shape": data.shape
     }
     return stats
@@ -58,17 +65,25 @@ def load_image(image_path):
             "computed_stats": compute_raw_stats(data),
             "zooms": zooms,
             "volume_mm3": volume_mm3,
-            "rms_contrast": rms_contrast(data),
-            "snr": snr(data),
+            "rms_contrast": rms_contrast(data[data > 0]),
+            "michelson_contrast": michelson_Contrast(data[data > 0]),
+            "snr": snr(data[data > 0]),
         }
     return stats
 
 def show_stats(stats):
     print("Stats pour l'image :")
-    print(f"  Longueur: {stats['data'].shape[0]}")
-    print(f"  Largeur: {stats['data'].shape[1]}")
-    print(f"  Hauteur: {stats['data'].shape[2]}")
-    
+    nx, ny, nz = stats['data'].shape
+    zx, zy, zz = stats['zooms']
+    longueur_mm = nx * zx
+    largeur_mm = ny * zy
+    hauteur_mm = nz * zz
+
+    print(f"  Longueur : {nx} voxels ({longueur_mm:.2f} mm)")
+    print(f"  Largeur  : {ny} voxels ({largeur_mm:.2f} mm)")
+    print(f"  Hauteur  : {nz} voxels ({hauteur_mm:.2f} mm)")
+    print(f"  Dimensions (mm) : {longueur_mm:.2f} × {largeur_mm:.2f} × {hauteur_mm:.2f}")
+
     zx, zy, zz = stats['zooms']
     print(f"  Zooms (Voxel): {zx:.3f} × {zy:.3f} × {zz:.3f} mm")
     
@@ -82,70 +97,36 @@ def show_stats(stats):
     print(f"  Std: {stats['computed_stats']['std']:.2f}")
     print(f"  Median: {stats['computed_stats']['median']:.2f}")
     print(f"  RMS Contrast: {stats['rms_contrast']:.4f}")
+    print(f"  Michelson Contrast: {stats['michelson_contrast']:.4f}")
     print(f"  SNR: {stats['snr']:.4f}")
 
-def show_matplotlib_dashboard(stats):
-    data = stats['data']
-    c = stats['computed_stats']
-    zx, zy, zz = stats['zooms']
-    vol_cm3 = float(stats['volume_mm3']) / 1000
-
-    fig = plt.figure(figsize=(15, 5))
-    fig.canvas.manager.set_window_title('Dashboard IRM')
-    fig.suptitle("Tableau de bord de l'image NIfTI", fontsize=16, fontweight='bold')
-
-    # --- 1. Affichage de la coupe centrale (Vue axiale) ---
-    ax1 = fig.add_subplot(1, 3, 1)
-    mid_z = data.shape[2] // 2
-    # Transposition pour un affichage souvent plus naturel des NIfTI
-    ax1.imshow(data[:, :, mid_z].T, cmap='gray', origin='lower')
-    ax1.set_title(f'Coupe centrale (Z = {mid_z})')
-    ax1.axis('off')
-
-    # --- 2. Histogramme des intensités ---
-    ax2 = fig.add_subplot(1, 3, 2)
-    # On ignore souvent les voxels à 0 (le fond) pour mieux voir les tissus
-    voxels_actifs = data[data > 0.01].flatten() 
-    ax2.hist(voxels_actifs, bins=64, color='steelblue', alpha=0.8)
-    ax2.set_title("Histogramme des intensités (> 0)")
-    ax2.set_xlabel("Niveaux de gris")
-    ax2.set_ylabel("Nombre de voxels")
-    ax2.grid(axis='y', linestyle='--', alpha=0.5)
-
-    # --- 3. Affichage des Statistiques ---
-    ax3 = fig.add_subplot(1, 3, 3)
-    ax3.axis('off') # On cache les axes pour ne garder que le texte
+def histogram(data, bins=100, remove_background=True, p_max=95, seuil_manuel_max=None):
+    plt.figure(figsize=(10, 6))
+    if remove_background:
+        data_to_plot = data[data > 0].flatten() 
+    else:
+        data_to_plot = data.flatten()
+        
+    if len(data_to_plot) == 0:
+        print("Erreur : Aucun voxel > 0 trouvé.")
+        return
+    pmin = np.percentile(data_to_plot, 1)
     
-    # Préparation du texte formaté
-    texte = (
-        f"GÉOMÉTRIE\n"
-        f"---------------------------\n"
-        f"Dimensions : {c['shape'][0]} × {c['shape'][1]} × {c['shape'][2]}\n"
-        f"Voxel (mm) : {zx:.3f} × {zy:.3f} × {zz:.3f}\n"
-        f"Volume     : {vol_cm3:,.2f} cm³\n\n"
-        f"INTENSITÉS\n"
-        f"---------------------------\n"
-        f"Min / Max  : {c['min']:.1f} / {c['max']:.1f}\n"
-        f"Moyenne    : {c['mean']:.1f}\n"
-        f"Médiane    : {c['median']:.1f}\n"
-        f"Écart-type : {c['std']:.1f}\n\n"
-        f"QUALITÉ\n"
-        f"---------------------------\n"
-        f"Contraste RMS : {stats['rms_contrast']:.4f}\n"
-        f"SNR           : {stats['snr']:.4f}"
-    ).replace(',', ' ') # Remplacement pour les espaces des milliers
-
-    # Ajout du bloc de texte dans le 3ème cadran
-    ax3.text(0.1, 0.95, texte, fontsize=11, family='monospace', 
-             va='top', ha='left', transform=ax3.transAxes,
-             bbox=dict(boxstyle='round,pad=1', facecolor='#f8f9fa', edgecolor='#dee2e6'))
-
-    # Ajustement des marges et affichage
-    plt.tight_layout()
+    if seuil_manuel_max is not None:
+        pmax = seuil_manuel_max
+    else:
+        pmax = np.percentile(data_to_plot, p_max)
+    data_filtered = data_to_plot[(data_to_plot >= pmin) & (data_to_plot <= pmax)]
+    plt.hist(data_filtered, bins=bins, range=(pmin, pmax), color='steelblue', alpha=0.8, edgecolor='black', linewidth=0.5)
+    plt.title(f"Histogramme des tissus utiles (Plage: {pmin:.1f} à {pmax:.1f})")
+    plt.xlabel("Intensité")
+    plt.ylabel("Nombre de voxels")
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
     plt.show()
-
 
 if __name__ == "__main__":
     args = get_args()
     stats = load_image(args.image)
-    show_matplotlib_dashboard(stats)
+    show_stats(stats)
+    histogram(stats['data'][stats['data'] > 0], bins=60, remove_background=True, p_max=90)
