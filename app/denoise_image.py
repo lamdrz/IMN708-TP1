@@ -266,17 +266,81 @@ def snr(image, spacing, cx_std, cy_std, half_std, cx_mean, cy_mean, half_mean, s
             title=title,    
         )
 
-    return snr
+    return snr, sigma, mean
 
 
-def denoise_comparison(image, sigma):
-    denoised_gauss = gaussian_filter(...)
-    denoised_bilat = denoise_bilateral(...)
-    denoised_nlm   = denoise_nl_means(...)
+def denoise_comparison(image, sigma_bruit, spacing, title):
+    # Normalisation
+    p1, p99 = np.percentile(image, (1, 99))
+    scale = p99 - p1
+    image_norm = np.clip((image - p1) / scale, 0, 1)
+    sigma_norm = float(sigma_bruit / scale)
 
-    res_gauss = image - denoised_gauss
-    res_bilat = image - denoised_bilat
-    res_nlm   = image - denoised_nlm
+    # Filtres
+    denoised_gauss = gaussian_filter(image_norm, sigma=0.8)
+    denoised_bilat = denoise_bilateral(
+        image_norm, 
+        sigma_spatial=1.5, 
+        sigma_color=float(2.0 * sigma_norm)
+    )
+    denoised_nlm   = denoise_nl_means(
+        image_norm,
+        h=float(1.15 * sigma_norm),
+        sigma=sigma_norm,
+        patch_size=4,
+        patch_distance=7,
+        fast_mode=True
+    )
+
+    # Résidus
+    res_gauss = image_norm - denoised_gauss
+    res_bilat = image_norm - denoised_bilat
+    res_nlm   = image_norm - denoised_nlm
+
+
+    # Affichage des résultats (généré par IA)
+    aspect = spacing[1] / spacing[0]
+    fig, axes = plt.subplots(2, 4, figsize=(16, 8))
+    fig.canvas.manager.set_window_title(f"Débruitage - {title}")
+
+    # Ligne 1 : Images
+    imgs = [image_norm, denoised_gauss, denoised_bilat, denoised_nlm]
+    titres_imgs = [
+        f"Original ({title})",
+        "Gaussien (Isotrope)",
+        "Bilatéral (Local)",
+        "NL-Means (Non-Local)",
+    ]
+
+    for col in range(4):
+        axes[0, col].imshow(
+            np.flip(imgs[col].T, axis=1),
+            cmap="gray",
+            origin="lower",
+            aspect=aspect,
+        )
+        axes[0, col].set_title(titres_imgs[col], fontsize=12)
+        axes[0, col].axis("off")
+
+    # Ligne 2 : Résidus (on masque la 1re case sous l'original)
+    axes[1, 0].axis("off")
+    residus = [res_gauss, res_bilat, res_nlm]
+    titres_res = ["Résidu Gaussien", "Résidu Bilatéral", "Résidu NL-Means"]
+
+    for col in range(3):
+        axes[1, col + 1].imshow(
+            np.flip(residus[col].T, axis=1),
+            cmap="bwr",
+            origin="lower",
+            aspect=aspect,
+            vmin=-0.15,
+            vmax=0.15,
+        )
+        axes[1, col + 1].set_title(titres_res[col], fontsize=12)
+        axes[1, col + 1].axis("off")
+
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == "__main__":
@@ -292,15 +356,18 @@ if __name__ == "__main__":
 
     show_histograms(flair_2d, t1_2d, hide_background=True)
 
-    snr_flair_2d = snr(
+    snr_flair_2d, sigma_flair_2d, mean_flair_2d = snr(
         flair_2d, flair_spacing,
         100, 214, 3,
         130, 115, 5,
         show_roi=True, title="Flair"
     )
-    snr_t1_2d = snr(
+    snr_t1_2d, sigma_t1_2d, mean_t1_2d = snr(
         t1_2d, t1_spacing,
         62, 25, 2,
         75, 110, 4,
         show_roi=True, title="T1"
     )
+
+    denoise_comparison(flair_2d, sigma_flair_2d, flair_spacing, "Flair")
+    denoise_comparison(t1_2d, sigma_t1_2d, t1_spacing, "T1")
