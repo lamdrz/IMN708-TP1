@@ -12,7 +12,7 @@ class ImageViewer:
         self.nx, self.ny, self.nz = self.data.shape[:3]
         self.nt = self.data.shape[3] if self.data.ndim >= 4 else 1
 
-        zooms = self.img.header.get_zooms()
+        zooms = self.img.header.get_zooms()[:3]
         self.dx, self.dy, self.dz = zooms
 
         self.aspect_x = self.dz / self.dy
